@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
@@ -22,22 +22,23 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Grant execute permission for gradlew
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Create Gradle Wrapper
         run: |
-          if [ -f ./gradlew ]; then
-            chmod +x ./gradlew
-          else
-            echo "No gradlew found – generating wrapper..."
-            gradle wrapper --gradle-version 8.9
-            chmod +x ./gradlew
-          fi
+          gradle wrapper --gradle-version 8.9
+          chmod +x ./gradlew
 
       - name: Build Debug APK
         run: ./gradlew assembleDebug --stacktrace
 
-      - name: Upload APK
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: SmsForwarder-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: app/build/outputs/apk/debug/*.apk
           retention-days: 30
+
+      - name: List outputs
+        run: find app/build/outputs -name "*.apk" || true
