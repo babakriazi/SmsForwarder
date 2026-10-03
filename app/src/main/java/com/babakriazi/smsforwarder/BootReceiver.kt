@@ -7,9 +7,15 @@ import android.util.Log
 
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
-            Log.d("SmsForwarder", "Boot completed - receiver ready")
-            // Receiver is already registered in manifest, nothing else needed
+        if (intent.action == Intent.ACTION_BOOT_COMPLETED ||
+            intent.action == Intent.ACTION_LOCKED_BOOT_COMPLETED ||
+            intent.action == "android.intent.action.QUICKBOOT_POWERON") {
+            Log.d("SmsForwarder", "Boot completed - starting KeepAliveService")
+            try {
+                KeepAliveService.start(context)
+            } catch (e: Exception) {
+                Log.e("SmsForwarder", "Failed to start service on boot", e)
+            }
         }
     }
 }
