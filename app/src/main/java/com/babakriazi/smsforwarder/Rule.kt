@@ -11,6 +11,7 @@ data class Rule(
     var bodyMatchType: MatchType = MatchType.CONTAINS,
     var logic: LogicType = LogicType.AND,
     var forwardTo: String = "",
+    var simSlot: Int = -1,   // -1 = پیش‌فرض سیستم، 0 = سیم‌کارت ۱، 1 = سیم‌کارت ۲
     var enabled: Boolean = true
 ) {
     enum class MatchType {

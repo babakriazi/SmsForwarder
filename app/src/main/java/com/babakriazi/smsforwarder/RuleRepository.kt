@@ -33,6 +33,7 @@ class RuleRepository(context: Context) {
                         obj.optString("logic", "AND")
                     ),
                     forwardTo = obj.optString("forwardTo", ""),
+                    simSlot = obj.optInt("simSlot", -1),
                     enabled = obj.optBoolean("enabled", true)
                 )
             )
@@ -52,6 +53,7 @@ class RuleRepository(context: Context) {
                 put("bodyMatchType", rule.bodyMatchType.name)
                 put("logic", rule.logic.name)
                 put("forwardTo", rule.forwardTo)
+                put("simSlot", rule.simSlot)
                 put("enabled", rule.enabled)
             }
             array.put(obj)

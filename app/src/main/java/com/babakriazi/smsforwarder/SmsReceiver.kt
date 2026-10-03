@@ -5,8 +5,8 @@ import android.content.Context
 import android.content.Intent
 import android.provider.Telephony
 import android.telephony.SmsManager
+import android.telephony.SubscriptionManager
 import android.util.Log
-import android.widget.Toast
 
 class SmsReceiver : BroadcastReceiver() {
 
@@ -17,7 +17,6 @@ class SmsReceiver : BroadcastReceiver() {
             val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent)
             if (messages.isNullOrEmpty()) return
 
-            // Combine multi-part SMS
             val sender = messages[0].displayOriginatingAddress ?: return
             val body = messages.joinToString(separator = "") { it.displayMessageBody ?: "" }
 
@@ -28,7 +27,7 @@ class SmsReceiver : BroadcastReceiver() {
 
             for (rule in rules) {
                 if (rule.matches(sender, body)) {
-                    forwardSms(context, rule.forwardTo, sender, body)
+                    forwardSms(context, rule.forwardTo, sender, body, rule.simSlot)
                 }
             }
         } catch (e: Exception) {
@@ -36,18 +35,18 @@ class SmsReceiver : BroadcastReceiver() {
         }
     }
 
-    private fun forwardSms(context: Context, to: String, originalSender: String, body: String) {
+    private fun forwardSms(
+        context: Context,
+        to: String,
+        originalSender: String,
+        body: String,
+        simSlot: Int
+    ) {
         try {
-            val smsManager = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-                context.getSystemService(SmsManager::class.java)
-            } else {
-                @Suppress("DEPRECATION")
-                SmsManager.getDefault()
-            }
+            val smsManager = getSmsManagerForSlot(context, simSlot)
 
             val message = "از: $originalSender\n\n$body"
 
-            // Split if too long
             val parts = smsManager.divideMessage(message)
             if (parts.size == 1) {
                 smsManager.sendTextMessage(to, null, message, null, null)
@@ -55,9 +54,42 @@ class SmsReceiver : BroadcastReceiver() {
                 smsManager.sendMultipartTextMessage(to, null, parts, null, null)
             }
 
-            Log.d("SmsForwarder", "Forwarded to $to")
+            Log.d("SmsForwarder", "Forwarded to $to using SIM slot $simSlot")
         } catch (e: Exception) {
             Log.e("SmsForwarder", "Failed to forward SMS", e)
+        }
+    }
+
+    private fun getSmsManagerForSlot(context: Context, simSlot: Int): SmsManager {
+        // simSlot: -1 = default, 0 = first SIM, 1 = second SIM
+        if (simSlot < 0) {
+            return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                context.getSystemService(SmsManager::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                SmsManager.getDefault()
+            }
+        }
+
+        try {
+            val subscriptionManager =
+                context.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE) as SubscriptionManager
+
+            val subList = subscriptionManager.activeSubscriptionInfoList
+            if (subList != null && subList.size > simSlot) {
+                val subId = subList[simSlot].subscriptionId
+                return SmsManager.getSmsManagerForSubscriptionId(subId)
+            }
+        } catch (e: Exception) {
+            Log.e("SmsForwarder", "Failed to get SIM $simSlot, falling back to default", e)
+        }
+
+        // fallback
+        return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            context.getSystemService(SmsManager::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            SmsManager.getDefault()
         }
     }
 }
