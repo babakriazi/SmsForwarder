@@ -21,6 +21,12 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          accept-android-sdk-licenses: true
+
+      - name: Accept Android licenses (fallback)
+        run: |
+          yes | sdkmanager --licenses || true
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -40,5 +46,5 @@ jobs:
           path: app/build/outputs/apk/debug/*.apk
           retention-days: 30
 
-      - name: List outputs
-        run: find app/build/outputs -name "*.apk" || true
+      - name: List APK files
+        run: find app/build/outputs -name "*.apk" -ls || true
