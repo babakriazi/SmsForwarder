@@ -1,9 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="Theme.SmsForwarder" parent="Theme.Material3.DayNight.NoActionBar">
-        <item name="colorPrimary">#1976D2</item>
-        <item name="colorPrimaryContainer">#BBDEFB</item>
+        <item name="colorPrimary">#0D47A1</item>
+        <item name="colorPrimaryContainer">#E3F2FD</item>
         <item name="colorOnPrimary">@android:color/white</item>
-        <item name="android:statusBarColor">#1565C0</item>
+        <item name="colorSecondary">#00897B</item>
+        <item name="colorSecondaryContainer">#E0F2F1</item>
+        <item name="android:statusBarColor">#0D47A1</item>
+        <item name="android:navigationBarColor">#FAFAFA</item>
+        <item name="android:windowLightNavigationBar">true</item>
     </style>
 </resources>
