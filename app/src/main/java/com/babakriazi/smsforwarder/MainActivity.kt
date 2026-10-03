@@ -3,11 +3,13 @@ package com.babakriazi.smsforwarder
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.database.Cursor
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
+import android.provider.Telephony
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -19,6 +21,9 @@ import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.floatingactionbutton.FloatingActionButton
+import com.google.android.material.materialswitch.MaterialSwitch
+import java.text.SimpleDateFormat
+import java.util.*
 
 class MainActivity : AppCompatActivity() {
 
@@ -33,6 +38,9 @@ class MainActivity : AppCompatActivity() {
         val allGranted = results.values.all { it }
         if (!allGranted) {
             Toast.makeText(this, "برای کار کردن برنامه، همه مجوزها لازم است", Toast.LENGTH_LONG).show()
+        } else {
+            KeepAliveService.start(this)
+            checkMissedSms()
         }
         checkBatteryOptimization()
     }
@@ -75,6 +83,20 @@ class MainActivity : AppCompatActivity() {
         loadRules()
     }
 
+    override fun onResume() {
+        super.onResume()
+        // Ensure service is running
+        if (hasSmsPermissions()) {
+            KeepAliveService.start(this)
+        }
+    }
+
+    private fun hasSmsPermissions(): Boolean {
+        return ContextCompat.checkSelfPermission(this, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED &&
+                ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED &&
+                ContextCompat.checkSelfPermission(this, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED
+    }
+
     private fun requestPermissions() {
         val permissions = mutableListOf(
             Manifest.permission.RECEIVE_SMS,
@@ -93,7 +115,9 @@ class MainActivity : AppCompatActivity() {
         if (needRequest) {
             permissionLauncher.launch(permissions.toTypedArray())
         } else {
+            KeepAliveService.start(this)
             checkBatteryOptimization()
+            checkMissedSms()
         }
     }
 
@@ -103,7 +127,7 @@ class MainActivity : AppCompatActivity() {
             if (!pm.isIgnoringBatteryOptimizations(packageName)) {
                 AlertDialog.Builder(this)
                     .setTitle("بهینه‌سازی باتری")
-                    .setMessage("برای جلوگیری از بسته شدن برنامه در پس‌زمینه، لطفاً بهینه‌سازی باتری را برای این برنامه غیرفعال کنید.")
+                    .setMessage("برای جلوگیری از بسته شدن برنامه، لطفاً بهینه‌سازی باتری را غیرفعال کنید. این کار برای پیامک‌های حسابداری خیلی مهم است.")
                     .setPositiveButton("تنظیمات") { _, _ ->
                         try {
                             val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
@@ -120,10 +144,133 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** Check SMS inbox for messages received in the last 24 hours that match rules but may have been missed */
+    private fun checkMissedSms() {
+        if (!hasSmsPermissions()) return
+
+        val rules = repo.getAllRules().filter { it.enabled && it.forwardTo.isNotBlank() }
+        if (rules.isEmpty()) return
+
+        val cutoff = System.currentTimeMillis() - 24 * 60 * 60 * 1000L // last 24h
+        val missed = mutableListOf<Triple<String, String, Long>>() // sender, body, date
+
+        try {
+            val cursor: Cursor? = contentResolver.query(
+                Telephony.Sms.Inbox.CONTENT_URI,
+                arrayOf(Telephony.Sms.ADDRESS, Telephony.Sms.BODY, Telephony.Sms.DATE),
+                "${Telephony.Sms.DATE} > ?",
+                arrayOf(cutoff.toString()),
+                "${Telephony.Sms.DATE} DESC"
+            )
+
+            cursor?.use {
+                val addrIdx = it.getColumnIndex(Telephony.Sms.ADDRESS)
+                val bodyIdx = it.getColumnIndex(Telephony.Sms.BODY)
+                val dateIdx = it.getColumnIndex(Telephony.Sms.DATE)
+
+                while (it.moveToNext()) {
+                    val sender = it.getString(addrIdx) ?: continue
+                    val body = it.getString(bodyIdx) ?: continue
+                    val date = it.getLong(dateIdx)
+
+                    for (rule in rules) {
+                        if (rule.matches(sender, body)) {
+                            missed.add(Triple(sender, body, date))
+                            break
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return
+        }
+
+        if (missed.isEmpty()) return
+
+        // Show confirmation dialog
+        val sdf = SimpleDateFormat("yyyy/MM/dd HH:mm", Locale("fa"))
+        val message = StringBuilder()
+        message.append("${missed.size} پیامک مطابق قوانین پیدا شد که ممکن است هنگام بسته بودن برنامه از دست رفته باشد:\n\n")
+        missed.take(8).forEach { (sender, body, date) ->
+            message.append("• از $sender\n  ${body.take(60)}${if (body.length > 60) "..." else ""}\n  ${sdf.format(Date(date))}\n\n")
+        }
+        if (missed.size > 8) message.append("... و ${missed.size - 8} مورد دیگر\n\n")
+        message.append("آیا می‌خواهید آن‌ها را الان فوروارد کنید؟")
+
+        AlertDialog.Builder(this)
+            .setTitle("پیامک‌های احتمالی از دست رفته")
+            .setMessage(message.toString())
+            .setPositiveButton("بله، فوروارد کن") { _, _ ->
+                forwardMissed(missed, rules)
+            }
+            .setNegativeButton("خیر", null)
+            .show()
+    }
+
+    private fun forwardMissed(missed: List<Triple<String, String, Long>>, rules: List<Rule>) {
+        var count = 0
+        for ((sender, body, _) in missed) {
+            for (rule in rules) {
+                if (rule.matches(sender, body)) {
+                    try {
+                        // Reuse logic from SmsReceiver
+                        val intent = Intent(this, SmsReceiver::class.java)
+                        // Call forward directly via a helper - simplest: create temp instance logic
+                        forwardOne(rule.forwardTo, sender, body, rule.simSlot)
+                        count++
+                    } catch (_: Exception) {}
+                    break
+                }
+            }
+        }
+        Toast.makeText(this, "$count پیامک فوروارد شد", Toast.LENGTH_LONG).show()
+    }
+
+    private fun forwardOne(to: String, originalSender: String, body: String, simSlot: Int) {
+        try {
+            val smsManager = if (simSlot >= 0) {
+                try {
+                    val subMgr = getSystemService(TELEPHONY_SUBSCRIPTION_SERVICE) as android.telephony.SubscriptionManager
+                    val list = subMgr.activeSubscriptionInfoList
+                    if (list != null && list.size > simSlot) {
+                        android.telephony.SmsManager.getSmsManagerForSubscriptionId(list[simSlot].subscriptionId)
+                    } else {
+                        getDefaultSmsManager()
+                    }
+                } catch (_: Exception) {
+                    getDefaultSmsManager()
+                }
+            } else {
+                getDefaultSmsManager()
+            }
+
+            val message = "از: $originalSender\n\n$body"
+            val parts = smsManager.divideMessage(message)
+            if (parts.size == 1) {
+                smsManager.sendTextMessage(to, null, message, null, null)
+            } else {
+                smsManager.sendMultipartTextMessage(to, null, parts, null, null)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun getDefaultSmsManager(): android.telephony.SmsManager {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            getSystemService(android.telephony.SmsManager::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            android.telephony.SmsManager.getDefault()
+        }
+    }
+
     private fun loadRules() {
         val rules = repo.getAllRules()
         adapter.submitList(rules)
         emptyText.visibility = if (rules.isEmpty()) View.VISIBLE else View.GONE
+        recyclerView.visibility = if (rules.isEmpty()) View.GONE else View.VISIBLE
     }
 
     private fun showRuleDialog(existing: Rule?) {
@@ -138,22 +285,16 @@ class MainActivity : AppCompatActivity() {
         val spSim = dialogView.findViewById<Spinner>(R.id.spSim)
         val edtForwardTo = dialogView.findViewById<EditText>(R.id.edtForwardTo)
 
-        // Setup spinners
         val matchTypes = arrayOf("شامل باشد", "دقیقاً برابر", "شروع شود با", "پایان یابد با")
-        val matchAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, matchTypes)
-        matchAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        val matchAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, matchTypes)
         spSenderType.adapter = matchAdapter
         spBodyType.adapter = matchAdapter
 
         val logicTypes = arrayOf("AND (هر دو شرط)", "OR (یکی از شرط‌ها)")
-        val logicAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, logicTypes)
-        logicAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-        spLogic.adapter = logicAdapter
+        spLogic.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, logicTypes)
 
         val simTypes = arrayOf("پیش‌فرض سیستم", "سیم‌کارت ۱", "سیم‌کارت ۲")
-        val simAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, simTypes)
-        simAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-        spSim.adapter = simAdapter
+        spSim.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, simTypes)
 
         if (existing != null) {
             edtName.setText(existing.name)
@@ -162,7 +303,6 @@ class MainActivity : AppCompatActivity() {
             edtBody.setText(existing.bodyFilter)
             spBodyType.setSelection(existing.bodyMatchType.ordinal)
             spLogic.setSelection(existing.logic.ordinal)
-            // simSlot: -1 → 0, 0 → 1, 1 → 2
             spSim.setSelection(when (existing.simSlot) {
                 0 -> 1
                 1 -> 2
@@ -171,10 +311,15 @@ class MainActivity : AppCompatActivity() {
             edtForwardTo.setText(existing.forwardTo)
         }
 
-        AlertDialog.Builder(this)
+        val dialog = AlertDialog.Builder(this)
             .setTitle(if (existing == null) "قانون جدید" else "ویرایش قانون")
             .setView(dialogView)
-            .setPositiveButton("ذخیره") { _, _ ->
+            .setPositiveButton("ذخیره", null)
+            .setNegativeButton("لغو", null)
+            .create()
+
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val rule = existing ?: Rule()
                 rule.name = edtName.text.toString().trim()
                 rule.senderFilter = edtSender.text.toString().trim()
@@ -183,26 +328,26 @@ class MainActivity : AppCompatActivity() {
                 rule.bodyMatchType = Rule.MatchType.values()[spBodyType.selectedItemPosition]
                 rule.logic = Rule.LogicType.values()[spLogic.selectedItemPosition]
                 rule.simSlot = when (spSim.selectedItemPosition) {
-                    1 -> 0   // سیم‌کارت ۱
-                    2 -> 1   // سیم‌کارت ۲
+                    1 -> 0
+                    2 -> 1
                     else -> -1
                 }
                 rule.forwardTo = edtForwardTo.text.toString().trim()
 
                 if (rule.forwardTo.isBlank()) {
                     Toast.makeText(this, "شماره مقصد الزامی است", Toast.LENGTH_SHORT).show()
-                    return@setPositiveButton
+                    return@setOnClickListener
                 }
 
                 repo.addOrUpdate(rule)
                 loadRules()
                 Toast.makeText(this, "ذخیره شد", Toast.LENGTH_SHORT).show()
+                dialog.dismiss()
             }
-            .setNegativeButton("لغو", null)
-            .show()
+        }
+        dialog.show()
     }
 
-    // Simple Adapter
     inner class RuleAdapter(
         private val onEdit: (Rule) -> Unit,
         private val onDelete: (Rule) -> Unit,
@@ -231,9 +376,9 @@ class MainActivity : AppCompatActivity() {
         inner class ViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
             private val txtTitle: TextView = itemView.findViewById(R.id.txtTitle)
             private val txtDetails: TextView = itemView.findViewById(R.id.txtDetails)
-            private val switchEnabled: Switch = itemView.findViewById(R.id.switchEnabled)
-            private val btnEdit: ImageButton = itemView.findViewById(R.id.btnEdit)
-            private val btnDelete: ImageButton = itemView.findViewById(R.id.btnDelete)
+            private val switchEnabled: MaterialSwitch = itemView.findViewById(R.id.switchEnabled)
+            private val btnEdit: View = itemView.findViewById(R.id.btnEdit)
+            private val btnDelete: View = itemView.findViewById(R.id.btnDelete)
 
             fun bind(rule: Rule) {
                 txtTitle.text = if (rule.name.isNotBlank()) rule.name else "قانون بدون نام"
@@ -245,7 +390,6 @@ class MainActivity : AppCompatActivity() {
                     "محتوا ${matchTypeFa(rule.bodyMatchType)} «${rule.bodyFilter}»"
 
                 val logicFa = if (rule.logic == Rule.LogicType.AND) "و" else "یا"
-
                 val simFa = when (rule.simSlot) {
                     0 -> "سیم ۱"
                     1 -> "سیم ۲"
