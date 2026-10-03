@@ -79,7 +79,8 @@ class MainActivity : AppCompatActivity() {
         val permissions = mutableListOf(
             Manifest.permission.RECEIVE_SMS,
             Manifest.permission.READ_SMS,
-            Manifest.permission.SEND_SMS
+            Manifest.permission.SEND_SMS,
+            Manifest.permission.READ_PHONE_STATE
         )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             permissions.add(Manifest.permission.POST_NOTIFICATIONS)
@@ -134,6 +135,7 @@ class MainActivity : AppCompatActivity() {
         val edtBody = dialogView.findViewById<EditText>(R.id.edtBody)
         val spBodyType = dialogView.findViewById<Spinner>(R.id.spBodyType)
         val spLogic = dialogView.findViewById<Spinner>(R.id.spLogic)
+        val spSim = dialogView.findViewById<Spinner>(R.id.spSim)
         val edtForwardTo = dialogView.findViewById<EditText>(R.id.edtForwardTo)
 
         // Setup spinners
@@ -148,6 +150,11 @@ class MainActivity : AppCompatActivity() {
         logicAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         spLogic.adapter = logicAdapter
 
+        val simTypes = arrayOf("پیش‌فرض سیستم", "سیم‌کارت ۱", "سیم‌کارت ۲")
+        val simAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, simTypes)
+        simAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        spSim.adapter = simAdapter
+
         if (existing != null) {
             edtName.setText(existing.name)
             edtSender.setText(existing.senderFilter)
@@ -155,6 +162,12 @@ class MainActivity : AppCompatActivity() {
             edtBody.setText(existing.bodyFilter)
             spBodyType.setSelection(existing.bodyMatchType.ordinal)
             spLogic.setSelection(existing.logic.ordinal)
+            // simSlot: -1 → 0, 0 → 1, 1 → 2
+            spSim.setSelection(when (existing.simSlot) {
+                0 -> 1
+                1 -> 2
+                else -> 0
+            })
             edtForwardTo.setText(existing.forwardTo)
         }
 
@@ -169,6 +182,11 @@ class MainActivity : AppCompatActivity() {
                 rule.bodyFilter = edtBody.text.toString().trim()
                 rule.bodyMatchType = Rule.MatchType.values()[spBodyType.selectedItemPosition]
                 rule.logic = Rule.LogicType.values()[spLogic.selectedItemPosition]
+                rule.simSlot = when (spSim.selectedItemPosition) {
+                    1 -> 0   // سیم‌کارت ۱
+                    2 -> 1   // سیم‌کارت ۲
+                    else -> -1
+                }
                 rule.forwardTo = edtForwardTo.text.toString().trim()
 
                 if (rule.forwardTo.isBlank()) {
@@ -228,7 +246,13 @@ class MainActivity : AppCompatActivity() {
 
                 val logicFa = if (rule.logic == Rule.LogicType.AND) "و" else "یا"
 
-                txtDetails.text = "$senderPart $logicFa $bodyPart\n→ ${rule.forwardTo}"
+                val simFa = when (rule.simSlot) {
+                    0 -> "سیم ۱"
+                    1 -> "سیم ۲"
+                    else -> "پیش‌فرض"
+                }
+
+                txtDetails.text = "$senderPart $logicFa $bodyPart\n→ ${rule.forwardTo}  ($simFa)"
 
                 switchEnabled.setOnCheckedChangeListener(null)
                 switchEnabled.isChecked = rule.enabled
