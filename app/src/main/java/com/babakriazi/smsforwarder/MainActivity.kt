@@ -20,8 +20,10 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.button.MaterialButton
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.materialswitch.MaterialSwitch
+import com.google.android.material.textfield.TextInputEditText
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -85,7 +87,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        // Ensure service is running
         if (hasSmsPermissions()) {
             KeepAliveService.start(this)
         }
@@ -144,15 +145,14 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** Check SMS inbox for messages received in the last 24 hours that match rules but may have been missed */
     private fun checkMissedSms() {
         if (!hasSmsPermissions()) return
 
         val rules = repo.getAllRules().filter { it.enabled && it.forwardTo.isNotBlank() }
         if (rules.isEmpty()) return
 
-        val cutoff = System.currentTimeMillis() - 24 * 60 * 60 * 1000L // last 24h
-        val missed = mutableListOf<Triple<String, String, Long>>() // sender, body, date
+        val cutoff = System.currentTimeMillis() - 24 * 60 * 60 * 1000L
+        val missed = mutableListOf<Triple<String, String, Long>>()
 
         try {
             val cursor: Cursor? = contentResolver.query(
@@ -188,7 +188,6 @@ class MainActivity : AppCompatActivity() {
 
         if (missed.isEmpty()) return
 
-        // Show confirmation dialog
         val sdf = SimpleDateFormat("yyyy/MM/dd HH:mm", Locale("fa"))
         val message = StringBuilder()
         message.append("${missed.size} پیامک مطابق قوانین پیدا شد که ممکن است هنگام بسته بودن برنامه از دست رفته باشد:\n\n")
@@ -214,9 +213,6 @@ class MainActivity : AppCompatActivity() {
             for (rule in rules) {
                 if (rule.matches(sender, body)) {
                     try {
-                        // Reuse logic from SmsReceiver
-                        val intent = Intent(this, SmsReceiver::class.java)
-                        // Call forward directly via a helper - simplest: create temp instance logic
                         forwardOne(rule.forwardTo, sender, body, rule.simSlot)
                         count++
                     } catch (_: Exception) {}
@@ -279,8 +275,8 @@ class MainActivity : AppCompatActivity() {
         val edtName = dialogView.findViewById<EditText>(R.id.edtName)
         val edtSender = dialogView.findViewById<EditText>(R.id.edtSender)
         val spSenderType = dialogView.findViewById<Spinner>(R.id.spSenderType)
-        val edtBody = dialogView.findViewById<EditText>(R.id.edtBody)
-        val spBodyType = dialogView.findViewById<Spinner>(R.id.spBodyType)
+        val containerBody = dialogView.findViewById<LinearLayout>(R.id.containerBodyConditions)
+        val btnAddBody = dialogView.findViewById<MaterialButton>(R.id.btnAddBodyCondition)
         val spLogic = dialogView.findViewById<Spinner>(R.id.spLogic)
         val spSim = dialogView.findViewById<Spinner>(R.id.spSim)
         val edtForwardTo = dialogView.findViewById<EditText>(R.id.edtForwardTo)
@@ -288,7 +284,6 @@ class MainActivity : AppCompatActivity() {
         val matchTypes = arrayOf("شامل باشد", "دقیقاً برابر", "شروع شود با", "پایان یابد با")
         val matchAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, matchTypes)
         spSenderType.adapter = matchAdapter
-        spBodyType.adapter = matchAdapter
 
         val logicTypes = arrayOf("AND (هر دو شرط)", "OR (یکی از شرط‌ها)")
         spLogic.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, logicTypes)
@@ -296,12 +291,59 @@ class MainActivity : AppCompatActivity() {
         val simTypes = arrayOf("پیش‌فرض سیستم", "سیم‌کارت ۱", "سیم‌کارت ۲")
         spSim.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, simTypes)
 
+        val logicPrevTypes = arrayOf("و (AND)", "یا (OR)")
+
+        // لیست ویوهای شرط محتوا برای خواندن موقع ذخیره
+        data class BodyRow(
+            val root: View,
+            val spLogicPrev: Spinner,
+            val spMatchType: Spinner,
+            val edtFilter: TextInputEditText,
+            val btnRemove: ImageButton
+        )
+        val bodyRows = mutableListOf<BodyRow>()
+
+        fun refreshRemoveButtons() {
+            bodyRows.forEachIndexed { index, row ->
+                row.btnRemove.visibility = if (bodyRows.size > 1) View.VISIBLE else View.GONE
+                row.spLogicPrev.visibility = if (index == 0) View.GONE else View.VISIBLE
+            }
+        }
+
+        fun addBodyRow(condition: BodyCondition? = null) {
+            val rowView = layoutInflater.inflate(R.layout.item_body_condition, containerBody, false)
+            val spLogicPrev = rowView.findViewById<Spinner>(R.id.spLogicPrev)
+            val spMatchType = rowView.findViewById<Spinner>(R.id.spMatchType)
+            val edtFilter = rowView.findViewById<TextInputEditText>(R.id.edtFilter)
+            val btnRemove = rowView.findViewById<ImageButton>(R.id.btnRemove)
+
+            spLogicPrev.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, logicPrevTypes)
+            spMatchType.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, matchTypes)
+
+            if (condition != null) {
+                edtFilter.setText(condition.filter)
+                spMatchType.setSelection(condition.matchType.ordinal)
+                spLogicPrev.setSelection(if (condition.logicWithPrevious == Rule.LogicType.OR) 1 else 0)
+            }
+
+            val row = BodyRow(rowView, spLogicPrev, spMatchType, edtFilter, btnRemove)
+            bodyRows.add(row)
+
+            btnRemove.setOnClickListener {
+                containerBody.removeView(rowView)
+                bodyRows.remove(row)
+                refreshRemoveButtons()
+            }
+
+            containerBody.addView(rowView)
+            refreshRemoveButtons()
+        }
+
+        // پر کردن اولیه
         if (existing != null) {
             edtName.setText(existing.name)
             edtSender.setText(existing.senderFilter)
             spSenderType.setSelection(existing.senderMatchType.ordinal)
-            edtBody.setText(existing.bodyFilter)
-            spBodyType.setSelection(existing.bodyMatchType.ordinal)
             spLogic.setSelection(existing.logic.ordinal)
             spSim.setSelection(when (existing.simSlot) {
                 0 -> 1
@@ -309,7 +351,17 @@ class MainActivity : AppCompatActivity() {
                 else -> 0
             })
             edtForwardTo.setText(existing.forwardTo)
+
+            if (existing.bodyConditions.isEmpty()) {
+                addBodyRow()
+            } else {
+                existing.bodyConditions.forEach { addBodyRow(it) }
+            }
+        } else {
+            addBodyRow()
         }
+
+        btnAddBody.setOnClickListener { addBodyRow() }
 
         val dialog = AlertDialog.Builder(this)
             .setTitle(if (existing == null) "قانون جدید" else "ویرایش قانون")
@@ -324,8 +376,6 @@ class MainActivity : AppCompatActivity() {
                 rule.name = edtName.text.toString().trim()
                 rule.senderFilter = edtSender.text.toString().trim()
                 rule.senderMatchType = Rule.MatchType.values()[spSenderType.selectedItemPosition]
-                rule.bodyFilter = edtBody.text.toString().trim()
-                rule.bodyMatchType = Rule.MatchType.values()[spBodyType.selectedItemPosition]
                 rule.logic = Rule.LogicType.values()[spLogic.selectedItemPosition]
                 rule.simSlot = when (spSim.selectedItemPosition) {
                     1 -> 0
@@ -333,6 +383,19 @@ class MainActivity : AppCompatActivity() {
                     else -> -1
                 }
                 rule.forwardTo = edtForwardTo.text.toString().trim()
+
+                // جمع‌آوری شرط‌های محتوا
+                val conditions = mutableListOf<BodyCondition>()
+                bodyRows.forEachIndexed { index, row ->
+                    val filter = row.edtFilter.text?.toString()?.trim() ?: ""
+                    val matchType = Rule.MatchType.values()[row.spMatchType.selectedItemPosition]
+                    val logicPrev = if (index == 0) Rule.LogicType.AND
+                    else if (row.spLogicPrev.selectedItemPosition == 1) Rule.LogicType.OR
+                    else Rule.LogicType.AND
+                    conditions.add(BodyCondition(filter, matchType, logicPrev))
+                }
+                if (conditions.isEmpty()) conditions.add(BodyCondition())
+                rule.bodyConditions = conditions
 
                 if (rule.forwardTo.isBlank()) {
                     Toast.makeText(this, "شماره مقصد الزامی است", Toast.LENGTH_SHORT).show()
@@ -386,9 +449,7 @@ class MainActivity : AppCompatActivity() {
                 val senderPart = if (rule.senderFilter.isBlank()) "هر فرستنده" else
                     "فرستنده ${matchTypeFa(rule.senderMatchType)} «${rule.senderFilter}»"
 
-                val bodyPart = if (rule.bodyFilter.isBlank()) "هر محتوا" else
-                    "محتوا ${matchTypeFa(rule.bodyMatchType)} «${rule.bodyFilter}»"
-
+                val bodyPart = rule.bodySummary()
                 val logicFa = if (rule.logic == Rule.LogicType.AND) "و" else "یا"
                 val simFa = when (rule.simSlot) {
                     0 -> "سیم ۱"
