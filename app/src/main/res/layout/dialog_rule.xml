@@ -58,37 +58,29 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="شرط محتوای پیامک"
+            android:text="شرط‌های محتوای پیامک"
             android:textStyle="bold"
             android:textColor="#1565C0"
             android:layout_marginTop="16dp" />
 
-        <com.google.android.material.textfield.TextInputLayout
+        <LinearLayout
+            android:id="@+id/containerBodyConditions"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:hint="متن یا بخشی از متن (خالی = همه)"
-            style="@style/Widget.Material3.TextInputLayout.OutlinedBox">
+            android:orientation="vertical" />
 
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/edtBody"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:inputType="textMultiLine"
-                android:minLines="1"
-                android:maxLines="3" />
-        </com.google.android.material.textfield.TextInputLayout>
-
-        <Spinner
-            android:id="@+id/spBodyType"
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnAddBodyCondition"
+            style="@style/Widget.Material3.Button.TonalButton"
             android:layout_width="match_parent"
-            android:layout_height="48dp"
-            android:layout_marginTop="4dp" />
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="＋ افزودن شرط محتوا" />
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="نوع ترکیب شرط‌ها"
+            android:text="منطق بین فرستنده و محتوا"
             android:textStyle="bold"
             android:textColor="#1565C0"
             android:layout_marginTop="16dp" />
