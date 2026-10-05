@@ -2,16 +2,24 @@ package com.babakriazi.smsforwarder
 
 import java.util.UUID
 
+data class BodyCondition(
+    var filter: String = "",
+    var matchType: Rule.MatchType = Rule.MatchType.CONTAINS,
+    /** منطق نسبت به شرط قبلی: برای اولین شرط نادیده گرفته می‌شود */
+    var logicWithPrevious: Rule.LogicType = Rule.LogicType.AND
+)
+
 data class Rule(
     val id: String = UUID.randomUUID().toString(),
     var name: String = "",
     var senderFilter: String = "",
     var senderMatchType: MatchType = MatchType.CONTAINS,
-    var bodyFilter: String = "",
-    var bodyMatchType: MatchType = MatchType.CONTAINS,
+    /** لیست شرط‌های محتوا – می‌توان چند تا با AND/OR داشت */
+    var bodyConditions: MutableList<BodyCondition> = mutableListOf(BodyCondition()),
+    /** منطق بین شرط فرستنده و کل گروه شرط‌های محتوا */
     var logic: LogicType = LogicType.AND,
     var forwardTo: String = "",
-    var simSlot: Int = -1,   // -1 = پیش‌فرض سیستم، 0 = سیم‌کارت ۱، 1 = سیم‌کارت ۲
+    var simSlot: Int = -1,
     var enabled: Boolean = true
 ) {
     enum class MatchType {
@@ -22,32 +30,58 @@ data class Rule(
         AND, OR
     }
 
-    fun matches(sender: String, body: String): Boolean {
-        val senderOk = if (senderFilter.isBlank()) {
-            true
-        } else {
-            when (senderMatchType) {
-                MatchType.EXACT -> sender.equals(senderFilter, ignoreCase = true)
-                MatchType.CONTAINS -> sender.contains(senderFilter, ignoreCase = true)
-                MatchType.STARTS_WITH -> sender.startsWith(senderFilter, ignoreCase = true)
-                MatchType.ENDS_WITH -> sender.endsWith(senderFilter, ignoreCase = true)
-            }
+    private fun matchOne(text: String, filter: String, type: MatchType): Boolean {
+        if (filter.isBlank()) return true
+        return when (type) {
+            MatchType.EXACT -> text.equals(filter, ignoreCase = true)
+            MatchType.CONTAINS -> text.contains(filter, ignoreCase = true)
+            MatchType.STARTS_WITH -> text.startsWith(filter, ignoreCase = true)
+            MatchType.ENDS_WITH -> text.endsWith(filter, ignoreCase = true)
         }
+    }
 
-        val bodyOk = if (bodyFilter.isBlank()) {
+    fun matches(sender: String, body: String): Boolean {
+        val senderOk = matchOne(sender, senderFilter, senderMatchType)
+
+        // ارزیابی شرط‌های محتوا به ترتیب با منطق بین آن‌ها
+        val activeConditions = bodyConditions.filter { it.filter.isNotBlank() }
+        val bodyOk = if (activeConditions.isEmpty()) {
             true
         } else {
-            when (bodyMatchType) {
-                MatchType.EXACT -> body.equals(bodyFilter, ignoreCase = true)
-                MatchType.CONTAINS -> body.contains(bodyFilter, ignoreCase = true)
-                MatchType.STARTS_WITH -> body.startsWith(bodyFilter, ignoreCase = true)
-                MatchType.ENDS_WITH -> body.endsWith(bodyFilter, ignoreCase = true)
+            var result = matchOne(body, activeConditions[0].filter, activeConditions[0].matchType)
+            for (i in 1 until activeConditions.size) {
+                val cond = activeConditions[i]
+                val thisOk = matchOne(body, cond.filter, cond.matchType)
+                result = when (cond.logicWithPrevious) {
+                    LogicType.AND -> result && thisOk
+                    LogicType.OR -> result || thisOk
+                }
             }
+            result
         }
 
         return when (logic) {
             LogicType.AND -> senderOk && bodyOk
             LogicType.OR -> senderOk || bodyOk
         }
+    }
+
+    /** توضیح خوانا برای نمایش در لیست */
+    fun bodySummary(): String {
+        val active = bodyConditions.filter { it.filter.isNotBlank() }
+        if (active.isEmpty()) return "هر محتوا"
+        return active.mapIndexed { index, c ->
+            val logic = if (index == 0) "" else when (c.logicWithPrevious) {
+                LogicType.AND -> " و "
+                LogicType.OR -> " یا "
+            }
+            val typeFa = when (c.matchType) {
+                MatchType.EXACT -> "دقیقاً"
+                MatchType.CONTAINS -> "شامل"
+                MatchType.STARTS_WITH -> "شروع با"
+                MatchType.ENDS_WITH -> "پایان با"
+            }
+            "$logic$typeFa «${c.filter}»"
+        }.joinToString("")
     }
 }
