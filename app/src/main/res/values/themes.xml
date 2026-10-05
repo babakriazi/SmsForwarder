@@ -9,5 +9,15 @@
         <item name="android:statusBarColor">#0D47A1</item>
         <item name="android:navigationBarColor">#FAFAFA</item>
         <item name="android:windowLightNavigationBar">true</item>
+        <!-- Dialog readability -->
+        <item name="materialAlertDialogTheme">@style/ThemeOverlay.SmsForwarder.Dialog</item>
+    </style>
+
+    <style name="ThemeOverlay.SmsForwarder.Dialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
+        <item name="android:background">#FFFFFF</item>
+        <item name="colorSurface">#FFFFFF</item>
+        <item name="colorOnSurface">#212121</item>
+        <item name="android:textColorPrimary">#212121</item>
+        <item name="android:textColorSecondary">#424242</item>
     </style>
 </resources>
