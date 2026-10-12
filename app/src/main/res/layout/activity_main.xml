@@ -67,12 +67,16 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnOpenLog"
-                    style="@style/Widget.Material3.Button.TonalButton"
+                    style="@style/Widget.Material3.Button"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="لاگ"
+                    android:textColor="@android:color/white"
+                    android:textStyle="bold"
                     android:minWidth="0dp"
-                    android:paddingHorizontal="16dp" />
+                    android:paddingHorizontal="20dp"
+                    app:backgroundTint="#0D47A1"
+                    app:cornerRadius="20dp" />
 
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
@@ -95,7 +99,7 @@
             android:text="هنوز قانونی تعریف نشده\nروی + بزنید تا قانون جدید بسازید"
             android:textAlignment="center"
             android:textSize="15sp"
-            android:textColor="#78909C"
+            android:textColor="#546E7A"
             android:visibility="gone" />
 
     </LinearLayout>

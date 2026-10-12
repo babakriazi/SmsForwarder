@@ -6,10 +6,13 @@
         <item name="colorOnPrimary">@android:color/white</item>
         <item name="colorSecondary">#00897B</item>
         <item name="colorSecondaryContainer">#E0F2F1</item>
+        <item name="colorOnSurface">#212121</item>
+        <item name="colorOnSurfaceVariant">#424242</item>
+        <item name="android:textColorPrimary">#212121</item>
+        <item name="android:textColorSecondary">#424242</item>
         <item name="android:statusBarColor">#0D47A1</item>
         <item name="android:navigationBarColor">#FAFAFA</item>
         <item name="android:windowLightNavigationBar">true</item>
-        <!-- Dialog readability -->
         <item name="materialAlertDialogTheme">@style/ThemeOverlay.SmsForwarder.Dialog</item>
     </style>
 
@@ -17,7 +20,9 @@
         <item name="android:background">#FFFFFF</item>
         <item name="colorSurface">#FFFFFF</item>
         <item name="colorOnSurface">#212121</item>
+        <item name="colorOnSurfaceVariant">#424242</item>
         <item name="android:textColorPrimary">#212121</item>
         <item name="android:textColorSecondary">#424242</item>
+        <item name="android:textColorHint">#616161</item>
     </style>
 </resources>
