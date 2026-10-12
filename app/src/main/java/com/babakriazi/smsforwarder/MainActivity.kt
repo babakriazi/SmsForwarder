@@ -37,10 +37,13 @@ class MainActivity : AppCompatActivity() {
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
+        AppLog.i(this, "permission result: $results")
         val allGranted = results.values.all { it }
         if (!allGranted) {
+            AppLog.w(this, "permissions denied")
             Toast.makeText(this, "برای کار کردن برنامه، همه مجوزها لازم است", Toast.LENGTH_LONG).show()
         } else {
+            AppLog.i(this, "all permissions granted")
             KeepAliveService.start(this)
             checkMissedSms()
         }
@@ -50,6 +53,9 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        AppLog.i(this, "MainActivity.onCreate")
+        AppLog.dumpSettings(this)
 
         repo = RuleRepository(this)
 
@@ -65,6 +71,7 @@ class MainActivity : AppCompatActivity() {
                     .setMessage("آیا مطمئن هستید؟")
                     .setPositiveButton("بله") { _, _ ->
                         repo.delete(rule.id)
+                        AppLog.i(this, "Rule deleted id=${rule.id.take(8)}")
                         loadRules()
                     }
                     .setNegativeButton("خیر", null)
@@ -73,6 +80,7 @@ class MainActivity : AppCompatActivity() {
             onToggle = { rule, enabled ->
                 rule.enabled = enabled
                 repo.addOrUpdate(rule)
+                AppLog.i(this, "Rule toggle name='${rule.name}' enabled=$enabled")
             }
         )
 
@@ -81,15 +89,32 @@ class MainActivity : AppCompatActivity() {
 
         fab.setOnClickListener { showRuleDialog(null) }
 
+        findViewById<MaterialButton>(R.id.btnOpenLog)
+            .setOnClickListener {
+                AppLog.i(this, "Open LogActivity")
+                startActivity(Intent(this, LogActivity::class.java))
+            }
+
         requestPermissions()
         loadRules()
     }
 
     override fun onResume() {
         super.onResume()
+        AppLog.i(this, "MainActivity.onResume hasSmsPerms=${hasSmsPermissions()}")
         if (hasSmsPermissions()) {
             KeepAliveService.start(this)
         }
+    }
+
+    override fun onPause() {
+        AppLog.i(this, "MainActivity.onPause")
+        super.onPause()
+    }
+
+    override fun onDestroy() {
+        AppLog.w(this, "MainActivity.onDestroy")
+        super.onDestroy()
     }
 
     private fun hasSmsPermissions(): Boolean {
@@ -114,8 +139,10 @@ class MainActivity : AppCompatActivity() {
         }
 
         if (needRequest) {
+            AppLog.i(this, "requesting permissions: $permissions")
             permissionLauncher.launch(permissions.toTypedArray())
         } else {
+            AppLog.i(this, "permissions already granted")
             KeepAliveService.start(this)
             checkBatteryOptimization()
             checkMissedSms()
@@ -125,7 +152,9 @@ class MainActivity : AppCompatActivity() {
     private fun checkBatteryOptimization() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             val pm = getSystemService(PowerManager::class.java)
-            if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+            val ignoring = pm.isIgnoringBatteryOptimizations(packageName)
+            AppLog.i(this, "battery.ignoreOptimizations=$ignoring")
+            if (!ignoring) {
                 AlertDialog.Builder(this)
                     .setTitle("بهینه‌سازی باتری")
                     .setMessage("برای جلوگیری از بسته شدن برنامه، لطفاً بهینه‌سازی باتری را غیرفعال کنید. این کار برای پیامک‌های حسابداری خیلی مهم است.")
@@ -149,7 +178,10 @@ class MainActivity : AppCompatActivity() {
         if (!hasSmsPermissions()) return
 
         val rules = repo.getAllRules().filter { it.enabled && it.forwardTo.isNotBlank() }
-        if (rules.isEmpty()) return
+        if (rules.isEmpty()) {
+            AppLog.i(this, "checkMissedSms: no active rules")
+            return
+        }
 
         val cutoff = System.currentTimeMillis() - 24 * 60 * 60 * 1000L
         val missed = mutableListOf<Triple<String, String, Long>>()
@@ -181,8 +213,9 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
             }
+            AppLog.i(this, "checkMissedSms: found ${missed.size} candidate(s) in last 24h")
         } catch (e: Exception) {
-            e.printStackTrace()
+            AppLog.e(this, "checkMissedSms failed", e)
             return
         }
 
@@ -215,7 +248,10 @@ class MainActivity : AppCompatActivity() {
                     try {
                         forwardOne(rule.forwardTo, sender, body, rule.simSlot)
                         count++
-                    } catch (_: Exception) {}
+                        AppLog.i(this, "Missed SMS forwarded to ${rule.forwardTo} from $sender")
+                    } catch (e: Exception) {
+                        AppLog.e(this, "Missed forward failed", e)
+                    }
                     break
                 }
             }
@@ -249,7 +285,7 @@ class MainActivity : AppCompatActivity() {
                 smsManager.sendMultipartTextMessage(to, null, parts, null, null)
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            AppLog.e(this, "forwardOne failed", e)
         }
     }
 
@@ -267,6 +303,7 @@ class MainActivity : AppCompatActivity() {
         adapter.submitList(rules)
         emptyText.visibility = if (rules.isEmpty()) View.VISIBLE else View.GONE
         recyclerView.visibility = if (rules.isEmpty()) View.GONE else View.VISIBLE
+        AppLog.i(this, "loadRules count=${rules.size}")
     }
 
     private fun showRuleDialog(existing: Rule?) {
@@ -293,7 +330,6 @@ class MainActivity : AppCompatActivity() {
 
         val logicPrevTypes = arrayOf("و (AND)", "یا (OR)")
 
-        // لیست ویوهای شرط محتوا برای خواندن موقع ذخیره
         data class BodyRow(
             val root: View,
             val spLogicPrev: Spinner,
@@ -339,7 +375,6 @@ class MainActivity : AppCompatActivity() {
             refreshRemoveButtons()
         }
 
-        // پر کردن اولیه
         if (existing != null) {
             edtName.setText(existing.name)
             edtSender.setText(existing.senderFilter)
@@ -384,7 +419,6 @@ class MainActivity : AppCompatActivity() {
                 }
                 rule.forwardTo = edtForwardTo.text.toString().trim()
 
-                // جمع‌آوری شرط‌های محتوا
                 val conditions = mutableListOf<BodyCondition>()
                 bodyRows.forEachIndexed { index, row ->
                     val filter = row.edtFilter.text?.toString()?.trim() ?: ""
@@ -403,6 +437,8 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 repo.addOrUpdate(rule)
+                AppLog.i(this@MainActivity, "Rule saved name='${rule.name}' to='${rule.forwardTo}' enabled=${rule.enabled}")
+                AppLog.dumpSettings(this@MainActivity)
                 loadRules()
                 Toast.makeText(this, "ذخیره شد", Toast.LENGTH_SHORT).show()
                 dialog.dismiss()
