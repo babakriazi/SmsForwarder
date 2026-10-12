@@ -18,27 +18,46 @@ class KeepAliveService : Service() {
         const val NOTIFICATION_ID = 1001
 
         fun start(context: Context) {
+            AppLog.i(context, "KeepAliveService.start requested")
             val intent = Intent(context, KeepAliveService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(intent)
+                } else {
+                    context.startService(intent)
+                }
+            } catch (e: Exception) {
+                AppLog.e(context, "KeepAliveService.start failed", e)
             }
         }
 
         fun stop(context: Context) {
+            AppLog.i(context, "KeepAliveService.stop requested")
             context.stopService(Intent(context, KeepAliveService::class.java))
         }
     }
 
     override fun onCreate() {
         super.onCreate()
+        AppLog.i(this, "KeepAliveService.onCreate")
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildNotification())
+        AppLog.i(this, "KeepAliveService foreground started")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        AppLog.i(this, "KeepAliveService.onStartCommand flags=$flags startId=$startId")
         return START_STICKY
+    }
+
+    override fun onDestroy() {
+        AppLog.w(this, "KeepAliveService.onDestroy — service stopped by system or user")
+        super.onDestroy()
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        AppLog.w(this, "KeepAliveService.onTaskRemoved — app swiped away")
+        super.onTaskRemoved(rootIntent)
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
