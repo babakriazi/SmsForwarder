@@ -306,6 +306,26 @@ class MainActivity : AppCompatActivity() {
         AppLog.i(this, "loadRules count=${rules.size}")
     }
 
+    private fun darkSpinnerAdapter(items: Array<String>): ArrayAdapter<String> {
+        return object : ArrayAdapter<String>(this, android.R.layout.simple_spinner_item, items) {
+            override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+                val v = super.getView(position, convertView, parent) as TextView
+                v.setTextColor(0xFF212121.toInt())
+                v.textSize = 16f
+                v.setPadding(24, 16, 24, 16)
+                return v
+            }
+            override fun getDropDownView(position: Int, convertView: View?, parent: ViewGroup): View {
+                val v = super.getDropDownView(position, convertView, parent) as TextView
+                v.setTextColor(0xFF212121.toInt())
+                v.setBackgroundColor(0xFFFFFFFF.toInt())
+                v.textSize = 16f
+                v.setPadding(24, 24, 24, 24)
+                return v
+            }
+        }.also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+    }
+
     private fun showRuleDialog(existing: Rule?) {
         val dialogView = layoutInflater.inflate(R.layout.dialog_rule, null)
 
@@ -318,15 +338,15 @@ class MainActivity : AppCompatActivity() {
         val spSim = dialogView.findViewById<Spinner>(R.id.spSim)
         val edtForwardTo = dialogView.findViewById<EditText>(R.id.edtForwardTo)
 
-        val matchTypes = arrayOf("شامل باشد", "دقیقاً برابر", "شروع شود با", "پایان یابد با")
-        val matchAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, matchTypes)
-        spSenderType.adapter = matchAdapter
+        // ترتیب باید دقیقاً با Rule.MatchType یکی باشد: EXACT, CONTAINS, STARTS_WITH, ENDS_WITH
+        val matchTypes = arrayOf("دقیقاً برابر", "شامل باشد", "شروع شود با", "پایان یابد با")
+        spSenderType.adapter = darkSpinnerAdapter(matchTypes)
 
         val logicTypes = arrayOf("AND (هر دو شرط)", "OR (یکی از شرط‌ها)")
-        spLogic.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, logicTypes)
+        spLogic.adapter = darkSpinnerAdapter(logicTypes)
 
         val simTypes = arrayOf("پیش‌فرض سیستم", "سیم‌کارت ۱", "سیم‌کارت ۲")
-        spSim.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, simTypes)
+        spSim.adapter = darkSpinnerAdapter(simTypes)
 
         val logicPrevTypes = arrayOf("و (AND)", "یا (OR)")
 
@@ -353,8 +373,8 @@ class MainActivity : AppCompatActivity() {
             val edtFilter = rowView.findViewById<TextInputEditText>(R.id.edtFilter)
             val btnRemove = rowView.findViewById<ImageButton>(R.id.btnRemove)
 
-            spLogicPrev.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, logicPrevTypes)
-            spMatchType.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, matchTypes)
+            spLogicPrev.adapter = darkSpinnerAdapter(logicPrevTypes)
+            spMatchType.adapter = darkSpinnerAdapter(matchTypes)
 
             if (condition != null) {
                 edtFilter.setText(condition.filter)
